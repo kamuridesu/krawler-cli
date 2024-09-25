@@ -1,0 +1,12 @@
+urls:
+    - url: https://inv.kamuridesu.com
+      extensions: 
+            - png
+            - jpg
+    # - url: teste.com
+    #   extensions:
+    #         - 3gp
+    #         - png
+target: c:\Users\user\Documents\teste
+# browser: "chrome"
+browser: firefox
