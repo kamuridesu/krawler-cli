@@ -1,8 +1,9 @@
 import asyncio
 from urllib.parse import urlparse
-from src.crawler_downloader_cli.parser import parse_find_url, fetch_links
+
+from src.crawler_downloader_cli.config import URL, Config
+from src.crawler_downloader_cli.parser import fetch_links, parse_find_url, parse_url
 from src.crawler_downloader_cli.utils import FileInfo, Progress, ProgressData, Request
-from src.crawler_downloader_cli.config import Config, URL
 
 
 class Fetcher:
@@ -15,7 +16,7 @@ class Fetcher:
         self.progress = Progress(for_tasks=True)
         self.progress.start()
 
-        self.to_fetch_in_browser = []
+        self.semaphore = asyncio.Semaphore(5)
 
     async def __aenter__(self, *args, **kwargs):
         return self
@@ -31,19 +32,18 @@ class Fetcher:
         try:
             return await self.request.get(url, progress=progress)
         except Exception as e:
-            # print(f"[ERROR/{_id}] Failed to fetch {url}: {e}")
             return None
 
-    async def fetch_browser_page(self, url: str, domain, extensions, _id=0):
+    async def fetch_browser_page(self, url: str, domain, extensions, pg):
         if self.browser_driver:
-            # print(f"[INFO/{_id}] Fetching {url} via browser...")
-            browser_content = await self.browser_driver.fetch_page(url)
-            await self.progress.generate()
-            matches = parse_find_url(browser_content, extensions)
-            if matches:
-                self.content[domain].extend(matches)
+            async with self.semaphore:
+                browser_content = await self.browser_driver.fetch_page(url)
+                await self.progress.generate()
+                matches = parse_find_url(browser_content, extensions)
+                if matches:
+                    self.content[domain].extend(matches)
 
-    async def crawl_url(self, url: str, extensions: list[str], progress: Progress, _id=0):
+    async def crawl_url(self, url: str, extensions: list[str], _id=0):
         url = url.strip()
         if url in self.visited_urls:
             return
@@ -54,6 +54,7 @@ class Fetcher:
         pg.status = "Downloading"
         file_info = await self.fetch_page(url, _id)
         if not file_info:
+            pg.status = "Failed"
             return
 
         domain = urlparse(url).netloc
@@ -63,29 +64,21 @@ class Fetcher:
         if file_info.filename.endswith(".html") and "html" in str(file_info.content):
             links = fetch_links(file_info.content, url)
             tasks = []
-            acc = _id
-            for link in links:
-                acc += 1
+            for i, link in enumerate(links, 1):
                 if self.is_same_domain(url, link):
-                    tasks.append(self.crawl_url(link, extensions, progress, acc))
-            # print(f"[INFO/{_id}] Waiting for tasks to finish")
+                    tasks.append(self.crawl_url(link, extensions, _id + i))
             await asyncio.gather(*tasks)
-            # print(f"[INFO/{_id}] Finished")
         matches = parse_find_url(file_info.content, extensions)
         if matches:
-            self.content[domain].extend(matches)
+            self.content[domain].extend([parse_url(url, x) for x in matches])
+            pg.status = "Done"
         else:
-            # print(f"[INFO/{_id}] Starting Browser Call")
-            # await self.fetch_browser_page(url, domain, extensions, _id)
-            # # print(f"[INFO/{_id}] Finished Browser Call")
-            self.to_fetch_in_browser.append((url, domain, extensions, _id))
-                
+            await self.fetch_browser_page(url, domain, extensions, pg)
         pg.status = "Done"
 
-    async def start(self, progress: Progress):
+    async def start(self):
         tasks = []
         for url_obj in self.config.urls:
-            tasks.append(self.crawl_url(url_obj.url, url_obj.extensions, progress))
-        print(f"[INFO] Last One Waiting for tasks to finish")
-        await asyncio.gather(*tasks)
-        await self.fetch_browser_page()
+            tasks.append(self.crawl_url(url_obj.url, url_obj.extensions))
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await self.progress.finish()

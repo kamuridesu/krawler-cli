@@ -1,0 +1,9 @@
+urls:
+  - url: https://inv.kamuridesu.com
+    extensions:
+      - png
+  - url: https://sample-videos.com/
+    extensions:
+      - mp4
+target: ./test
+browser: firefox

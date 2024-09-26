@@ -52,4 +52,6 @@ class Config:
     @staticmethod
     def load(filename: StrOrPath) -> "Config":
         with open(filename) as f:
-            return Config.parse(yaml.safe_load(f))
+            config = Config.parse(yaml.safe_load(f))
+            Path(config.target).mkdir(exist_ok=True)
+            return config

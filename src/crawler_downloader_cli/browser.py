@@ -1,24 +1,25 @@
-from playwright.async_api import async_playwright, Browser
+from playwright.async_api import Browser, async_playwright
 
 from src.crawler_downloader_cli.abstract import BaseDriver
 
 
 async def fetch_page(url: str, browser: Browser):
-        page = await browser.new_page()
+    try:
+        page = await browser.new_page(ignore_https_errors=True)
         await page.goto(url)
         content = await page.content()
         return content
+    except Exception:
+        return ""
 
 
 class FirefoxDriver(BaseDriver):
     async def fetch_page(self, url: str) -> str:
-        print("[INFO/Firefox] Fetching page " + url)
         async with async_playwright() as p:
-            browser = await p.firefox.launch(headless=False)
+            browser = await p.firefox.launch()
             data = await fetch_page(url, browser)
             await browser.close()
             await p.stop()
-        print("[INFO/Firefox] Returning data ")
         return data
 
 
@@ -35,7 +36,7 @@ class ChromiumDriver(BaseDriver):
 def get_browser_driver(browser: str) -> BaseDriver | None:
     drivers: dict[str, BaseDriver] = {
         "firefox": FirefoxDriver(),
-        "chormium": ChromiumDriver(),
+        "chromium": ChromiumDriver(),
     }
 
     return drivers.get(browser)

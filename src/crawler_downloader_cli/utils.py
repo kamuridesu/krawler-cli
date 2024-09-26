@@ -1,8 +1,8 @@
 import asyncio
 import http.cookies
+import sys
 from dataclasses import dataclass
 from random import randint
-import sys
 from typing import Literal
 
 import filetype
@@ -33,15 +33,23 @@ class ProgressData:
 
 
 class Progress:
-    def __init__(self,  for_tasks=False):
+    def __init__(self, for_tasks=False):
         self.progress_data: list[ProgressData] = []
         self.task: asyncio.Task | None = None
         self.for_tasks = for_tasks
+        self.max_msg_len = 0
 
     def register(self, id: int):
         pd = ProgressData(id)
         self.progress_data.append(pd)
         return pd
+
+    def get_count(self, term: str) -> int:
+        filtered = []
+        for x in self.progress_data:
+            if x.status == term.capitalize():
+                filtered.append(x)
+        return len(filtered)
 
     async def generate(self):
         body = ""
@@ -54,12 +62,14 @@ class Progress:
                     continue
                 body += f"File {file.id}: {file.status}"
         else:
-            count = len(self.progress_data)
-            for task in self.progress_data:
-                if task.status == "Done":
-                    count -= 1
-            body = f"Tasks: [{count}/{len(self.progress_data)}]"
-        sys.stdout.write(f"[PROGRESS] " + body)
+            total = len(self.progress_data)
+            failed = self.get_count("failed")
+            done = self.get_count("done")
+            fetching = self.get_count("downloading")
+            body = f"Tasks: Total: {total} | Fetching: {fetching} | Done: {done} | Failed: {failed}"
+        if len(body) > self.max_msg_len:
+            self.max_msg_len = len(body)
+        sys.stdout.write(f"[PROGRESS] " + body + (" " * self.max_msg_len) + "\r")
         sys.stdout.flush()
 
     async def __start(self):
@@ -109,7 +119,7 @@ class Request:
         async with self.session.get(url, headers=DEFAULT_HEADERS) as response:
             if response.status != 200:
                 # print(f"[WARN] Erro fetching URL {url}, status is {response.status}")
-                raise TypeError("Can't fetch URL")
+                raise TypeError(f"Can't fetch URL, status is {response.status}")
             filename = f"{generate_random_id()}"
             size = 0
             ctype = ""
