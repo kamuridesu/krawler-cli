@@ -1,7 +1,7 @@
 # Setup
 
 ```sh
-uv install
+uv sync
 uv run playwright install
 ```
 
